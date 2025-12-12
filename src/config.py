@@ -14,6 +14,9 @@ class DataConfig(BaseModel):
     window_size: int = 10
     batch_size: int = 32
     
+    use_cache: bool = True
+    cache_dir: str = "./cache"
+    
     smd: Optional[SMDOptions] = None
     cic: Optional[CICOptions] = None
 

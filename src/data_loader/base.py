@@ -1,3 +1,7 @@
+import os
+import pickle
+import hashlib
+from pathlib import Path
 from abc import ABC, abstractmethod
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
@@ -46,4 +50,48 @@ class BaseDataLoader(ABC):
         """Public interface to get processed data."""
         self.load_raw()
         self.preprocess()
+        return self.train_data, self.test_data
+    
+    def _get_cache_path(self) -> Path:
+        """
+        Generates a unique filename based on the configuration.
+        Format: {Dataset}_{Entity}_{WindowSize}_{Hash}.pkl
+        """
+        # 1. Base identifier
+        name_parts = [self.config.dataset_type.value, str(self.config.window_size)]
+        
+        # 2. Add specific identifier (e.g. machine name)
+        if self.config.smd:
+            name_parts.append(self.config.smd.entity_id)
+            
+        # 3. Create a unique hash for complex configs (like column selection)
+        # We stringify the config and hash it to catch ANY change (e.g. changing columns)
+        config_str = self.config.model_dump_json()
+        config_hash = hashlib.md5(config_str.encode()).hexdigest()[:8] # Short hash
+        
+        filename = f"{'_'.join(name_parts)}_{config_hash}.pkl"
+        return Path(self.config.cache_dir) / filename
+
+    def get_data(self):
+        # 1. Try to Load from Cache
+        if self.config.use_cache:
+            cache_path = self._get_cache_path()
+            if cache_path.exists():
+                print(f"[{self.config.dataset_type}] Loading from cache: {cache_path}")
+                with open(cache_path, "rb") as f:
+                    self.train_data, self.test_data = pickle.load(f)
+                return self.train_data, self.test_data
+
+        # 2. If no cache, Process from Scratch
+        print(f"[{self.config.dataset_type}] Cache not found. Processing raw data...")
+        self.load_raw()
+        self.preprocess()
+        
+        # 3. Save to Cache
+        if self.config.use_cache:
+            cache_path = self._get_cache_path()
+            print(f"[{self.config.dataset_type}] Saving cache to: {cache_path}")
+            with open(cache_path, "wb") as f:
+                pickle.dump((self.train_data, self.test_data), f)
+                
         return self.train_data, self.test_data
