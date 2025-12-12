@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from src.config import SMDConfig
 from .base import BaseDataLoader
 
 class SMDLoader(BaseDataLoader):
