@@ -13,9 +13,10 @@ class SMDLoader(BaseDataLoader):
         label_path = root / "test_label" / f"{machine_name}.txt"
         
         if not train_path.exists():
+            self.logger.error(f"File not found: {train_path}")
             raise FileNotFoundError(f"SMD file not found: {train_path}")
 
-        print(f"[SMD] Loading {machine_name}...")
+        self.logger.info(f"Loading {machine_name}...")
 
         self.df_train_raw = pd.read_csv(train_path, header=None)
         self.df_test_raw = pd.read_csv(test_path, header=None)
@@ -58,4 +59,5 @@ class SMDLoader(BaseDataLoader):
         self.train_data = (X_train, None)
         self.test_data = (X_test, y_test)
         
-        print(f"[SMD] Processed Train: {X_train.shape}")
+        self.logger.info(f"Processed Train: {X_train.shape}")
+        self.logger.info(f"Processed Test: {X_test.shape}")

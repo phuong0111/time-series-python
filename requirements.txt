@@ -1,4 +1,6 @@
-numpy
-pandas
-pydantic
-scikit_learn
+numpy==2.2.6
+pandas==2.3.3
+pydantic==2.12.5
+pydantic_settings==2.12.0
+scikit_learn==1.7.2
+tensorflow==2.20.0

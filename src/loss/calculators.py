@@ -1,59 +1,62 @@
+import logging
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
+
+logger = logging.getLogger("WeightCalculator")
 
 class WeightCalculator:
     
     @staticmethod
-    def calculate_rf_importance(X_data, y_labels):
+    def calculate_rf_importance(X_data, y_labels, n_estimators=100, random_state=42):
         """
         Trains a Random Forest to find feature importance.
-        Note: Requires labeled data (usually from Test set or a labeled subset).
+        Args:
+            n_estimators: Number of trees (from config)
+            random_state: Seed for reproducibility (from config)
         """
-        print("[Loss] Calculating Random Forest Feature Importance...")
-        # Flatten time series: (Samples, Time, Feat) -> (Samples, Time*Feat) 
-        # OR usually for tabular RF: (Samples, Feat) - User implementation depends on data shape
-        # Assuming X_data is (Samples, Time, Feat), we might take the mean over time 
-        # or reshape. Let's align with the user's snippet logic.
+        logger.info(f"Calculating RF Importance (Trees={n_estimators}, Seed={random_state})...")
         
-        # Flattening for RF
+        # Flatten: (Samples, Time, Feat) -> (Samples, Time*Feat)
         n_samples, n_steps, n_features = X_data.shape
         X_flat = X_data.reshape(n_samples, -1)
         
-        rf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+        # Use config values
+        rf = RandomForestClassifier(
+            n_estimators=n_estimators, 
+            random_state=random_state, 
+            n_jobs=-1
+        )
         rf.fit(X_flat, y_labels)
         
         importances = rf.feature_importances_
         
-        # If RF output shape matches X_flat, we need to aggregate back to n_features
-        # If input was (Time*Feat), importance is also (Time*Feat).
-        # We reshape and sum over time to get importance per feature.
+        # Reshape and aggregate
         imp_reshaped = importances.reshape(n_steps, n_features)
         feature_importance = np.sum(imp_reshaped, axis=0)
         
-        # Normalize sum to 1
+        # Normalize
         feature_importance = feature_importance / np.sum(feature_importance)
-        print(f"[Loss] RF Weights: {feature_importance}")
+        
+        logger.info(f"RF Weights shape: {feature_importance.shape}")
         return feature_importance
 
     @staticmethod
-    def calculate_inverse_mse(model, X_train):
+    def calculate_inverse_mse(model, X_train, epsilon=1e-6):
         """
-        1. Predicts X_train using the current model state.
-        2. Calculates MSE per feature.
-        3. Returns weights = 1 / (MSE + epsilon).
+        Args:
+            epsilon: Small constant to avoid division by zero (from config)
         """
-        print("[Loss] Calculating Inverse MSE Weights (Feature Scaling)...")
-        train_pred = model.predict(X_train)
+        logger.info(f"Calculating Inverse MSE Weights (epsilon={epsilon})...")
+        train_pred = model.predict(X_train, verbose=0)
         
-        # MSE per feature (Average over Samples and Time)
-        # Axis 0=Samples, 1=Time
+        # MSE per feature
         mse_per_feat = np.mean((X_train - train_pred)**2, axis=(0, 1))
         
-        # Inverse
-        inv_mse = 1.0 / (mse_per_feat + 1e-6)
+        # Use config value for epsilon
+        inv_mse = 1.0 / (mse_per_feat + epsilon)
         
-        # Normalize (Optional, but good for stability)
+        # Normalize
         weights = inv_mse / np.mean(inv_mse)
         
-        print(f"[Loss] Scaled Weights: {weights}")
+        logger.info(f"Scaled Weights range: [{np.min(weights):.4f}, {np.max(weights):.4f}]")
         return weights

@@ -3,7 +3,7 @@ from .base import BaseDataLoader
 
 class CICLoader(BaseDataLoader):
     def load_raw(self):
-        print(f"[CIC] Loading {self.config.data_path}...")
+        self.logger.info(f"Loading {machine_name}...")
         self.df_raw = pd.read_csv(self.config.data_path)
 
     def preprocess(self):
@@ -33,5 +33,5 @@ class CICLoader(BaseDataLoader):
         self.train_data = (X_train, None) 
         self.test_data = (X_test, y_test)
         
-        print(f"[CIC] Processed Train: {X_train.shape}")
-        print(f"[CIC] Processed Test: {X_test.shape}")
+        self.logger.info(f"Processed Train: {X_train.shape}")
+        self.logger.info(f"Processed Test: {X_test.shape}")

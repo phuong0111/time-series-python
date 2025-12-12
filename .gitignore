@@ -2,4 +2,6 @@ __pycache__/
 data/
 .venv/
 cache/
+logs/
+checkpoints
 .env

@@ -1,4 +1,5 @@
 import os
+import logging
 import pickle
 import hashlib
 from pathlib import Path
@@ -9,6 +10,7 @@ from src.config import DataConfig
 
 class BaseDataLoader(ABC):
     def __init__(self, config: DataConfig):
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.config = config
         self.scaler = MinMaxScaler()
         self.train_data = None
@@ -81,20 +83,20 @@ class BaseDataLoader(ABC):
         if self.config.use_cache:
             cache_path = self._get_cache_path()
             if cache_path.exists():
-                print(f"[{self.config.dataset_type}] Loading from cache: {cache_path}")
+                self.logger.info(f"Loading from cache: {cache_path}")
                 with open(cache_path, "rb") as f:
                     self.train_data, self.test_data = pickle.load(f)
                 return self.train_data, self.test_data
 
         # 2. If no cache, Process from Scratch
-        print(f"[{self.config.dataset_type}] Cache not found. Processing raw data...")
+        self.logger.info("Cache not found. Processing raw data...")
         self.load_raw()
         self.preprocess()
         
         # 3. Save to Cache
         if self.config.use_cache:
             cache_path = self._get_cache_path()
-            print(f"[{self.config.dataset_type}] Saving cache to: {cache_path}")
+            self.logger.info(f"Saving cache to: {cache_path}")
             with open(cache_path, "wb") as f:
                 pickle.dump((self.train_data, self.test_data), f)
                 

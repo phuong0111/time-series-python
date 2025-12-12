@@ -1,67 +1,76 @@
 from abc import ABC, abstractmethod
 from src.loss.calculators import WeightCalculator
 from src.config import LossConfig
+import logging
 
 class TrainingStrategy(ABC):
     def __init__(self, config: LossConfig):
         self.config = config
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     @abstractmethod
     def execute(self, model_wrapper, X_train, X_test=None, y_test=None):
-        """
-        Orchestrates the training process.
-        Args:
-            model_wrapper: Instance of BaseAnomalyDetector (LSTM/TCN/etc)
-            X_train: Training data
-            X_test: Test data (needed for RF)
-            y_test: Labels (needed for RF)
-        """
         pass
 
 class MSEStrategy(TrainingStrategy):
     def execute(self, model_wrapper, X_train, X_test=None, y_test=None):
-        print(">>> [Strategy] Executing Standard MSE Training")
-        # 1. Compile with default MSE
+        self.logger.info("Executing Standard MSE Training")
         model_wrapper.compile_model(custom_weights=None) 
-        # 2. Train normally
         model_wrapper.train(X_train)
+        return None
 
 class RFWeightedStrategy(TrainingStrategy):
     def execute(self, model_wrapper, X_train, X_test=None, y_test=None):
-        print(">>> [Strategy] Executing Random Forest Weighted Training")
+        self.logger.info("Executing Random Forest Weighted Training")
         
         if X_test is None or y_test is None:
-            raise ValueError("RF Strategy requires X_test and y_test for importance calculation.")
+            raise ValueError("RF Strategy requires X_test and y_test")
 
-        # 1. Calculate Weights
-        weights = WeightCalculator.calculate_rf_importance(X_test, y_test)
+        # Extract config values
+        cfg = self.config.rf_weighted
         
-        # 2. Re-compile model with these weights
+        # Pass to calculator
+        weights = WeightCalculator.calculate_rf_importance(
+            X_test, 
+            y_test, 
+            n_estimators=cfg.n_estimators, 
+            random_state=cfg.random_state
+        )
+        
         model_wrapper.compile_model(custom_weights=weights)
-        
-        # 3. Train
         model_wrapper.train(X_train)
+        
+        return weights
+        
 
 class FeatureScaledStrategy(TrainingStrategy):
     def execute(self, model_wrapper, X_train, X_test=None, y_test=None):
-        print(">>> [Strategy] Executing Feature-Scaled Reconstruction Training")
+        self.logger.info("Executing Feature-Scaled Reconstruction Training")
         
-        # 1. Pre-training (Fast, unweighted)
-        print("   (A) Pre-training phase (MSE)...")
+        # Extract config values
+        cfg = self.config.feature_scaled
+        
+        # 1. Pre-training
+        self.logger.info(f"(A) Pre-training phase ({self.config.feature_scaled.pretrain_epochs} epochs)...")
         original_epochs = model_wrapper.config.epochs
+        model_wrapper.config.epochs = cfg.pretrain_epochs
         
-        # Temporarily reduce epochs for pre-training
-        model_wrapper.config.epochs = self.config.pretrain_epochs
-        model_wrapper.compile_model(custom_weights=None) # MSE
+        model_wrapper.compile_model(custom_weights=None)
         model_wrapper.train(X_train)
         
-        # 2. Calculate Weights (Inverse MSE)
-        print("   (B) Calculating Feature Weights...")
-        weights = WeightCalculator.calculate_inverse_mse(model_wrapper.model, X_train)
+        # 2. Calculate Weights
+        self.logger.info("(B) Calculating Feature Weights...")
+        # Pass epsilon to calculator
+        weights = WeightCalculator.calculate_inverse_mse(
+            model_wrapper.model, 
+            X_train,
+            epsilon=cfg.epsilon
+        )
         
-        # 3. Fine-tuning (Weighted)
-        print("   (C) Fine-tuning phase (Weighted)...")
-        # Restore original epoch count
+        # 3. Fine-tuning
+        self.logger.info("(C) Fine-tuning phase...")
         model_wrapper.config.epochs = original_epochs
         model_wrapper.compile_model(custom_weights=weights)
         model_wrapper.train(X_train)
+        
+        return weights
