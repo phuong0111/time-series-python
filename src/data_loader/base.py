@@ -1,8 +1,5 @@
-# src/data_loader/base.py
-
 from abc import ABC, abstractmethod
 import numpy as np
-import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from src.config import DataConfig
 
@@ -15,39 +12,38 @@ class BaseDataLoader(ABC):
         
     @abstractmethod
     def load_raw(self):
+        """Load CSV files from disk."""
         pass
 
     @abstractmethod
     def preprocess(self):
+        """Clean, scale, and window the data."""
         pass
 
     def create_sliding_window(self, data, labels=None):
         """
-        Vectorized sliding window.
-        Input data shape: (Time_Steps, Features)
-        Output shape: (Samples, Window_Size, Features)
+        Convert 2D (Time, Feat) -> 3D (Samples, Window, Feat).
+        Uses vectorized stride_tricks for performance.
         """
         ws = self.config.window_size
         
         # 1. Create Sliding Window
-        # Default Output: (Samples, Features, Window_Size)
+        # Default Output of sliding_window_view: (Samples, Features, Window_Size)
         X = np.lib.stride_tricks.sliding_window_view(data, window_shape=ws, axis=0)
         
-        # 2. FIX: Swap the last two axes to get (Samples, Window_Size, Features)
+        # 2. Swap axes to match LSTM format: (Samples, Window_Size, Features)
         X = np.moveaxis(X, -1, 1)
         
         y = None
         if labels is not None:
-            # Handle labels (assuming labels are 1D array)
-            # Output: (Samples, Window_Size)
+            # Handle labels: If ANY point in window is anomaly -> Label = 1
             label_windows = np.lib.stride_tricks.sliding_window_view(labels, window_shape=ws, axis=0)
-            
-            # If ANY point in the window is an anomaly -> Label = 1
             y = np.any(label_windows == 1, axis=1).astype(int)
             
         return X, y
 
     def get_data(self):
+        """Public interface to get processed data."""
         self.load_raw()
         self.preprocess()
         return self.train_data, self.test_data
