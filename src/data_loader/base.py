@@ -14,6 +14,10 @@ class BaseDataLoader(ABC):
         self.train_data = None
         self.test_data = None
         
+        if self.config.use_cache:
+            import os
+            os.makedirs(self.config.cache_dir, exist_ok=True)
+        
     @abstractmethod
     def load_raw(self):
         """Load CSV files from disk."""
