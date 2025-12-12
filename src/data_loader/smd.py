@@ -5,9 +5,6 @@ from src.config import SMDConfig
 from .base import BaseDataLoader
 
 class SMDLoader(BaseDataLoader):
-    def __init__(self, config: SMDConfig):
-        super().__init__(config)
-        self.config = config 
         
     def load_raw(self):
         root = Path(self.config.data_path)
