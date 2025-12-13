@@ -17,7 +17,7 @@ class DataConfig(BaseModel):
     dataset_type: DatasetType = DatasetType.SMD  
     data_path: str = "data/SMD"                  
     # --------------------------------
-    window_size: int = 10
+    window_size: int = 80
     batch_size: int = 32
     use_cache: bool = True
     cache_dir: str = "./cache"
@@ -41,11 +41,17 @@ class LSTMOptions(BaseModel):
     activation: str = "relu"
 
 class TCNOptions(BaseModel):
-    nb_filters: int = 64
+    nb_filters: List[int] = [32, 64]
     kernel_size: int = 3
-    dilations: List[int] = [1, 2, 4, 8]
+    dilations: List[int] = [1, 2]
     activation: str = "relu"
     output_activation: str = "linear"
+    
+    @model_validator(mode='after')
+    def validate_lengths(self):
+        if len(self.nb_filters) != len(self.dilations):
+            raise ValueError("TCN: nb_filters list must have same length as dilations list")
+        return self
 
 class TransformerOptions(BaseModel):
     num_heads: int = 4

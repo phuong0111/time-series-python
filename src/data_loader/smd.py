@@ -28,12 +28,12 @@ class SMDLoader(BaseDataLoader):
 
     def preprocess(self):
         # 2. Add Timestamp (same as before)
-        if "timestamp" not in self.df_train_raw.columns:
-            # Note: Since header=None, columns are integers 0, 1, 2...
-            # We insert at index 0. The column name "timestamp" is symbolic here 
-            # as the dataframe has integer columns, but inserting a string col is fine.
-            self.df_train_raw.insert(0, "timestamp", np.arange(1, len(self.df_train_raw) + 1))
-            self.df_test_raw.insert(0, "timestamp", np.arange(1, len(self.df_test_raw) + 1))
+        # if "timestamp" not in self.df_train_raw.columns:
+        #     # Note: Since header=None, columns are integers 0, 1, 2...
+        #     # We insert at index 0. The column name "timestamp" is symbolic here 
+        #     # as the dataframe has integer columns, but inserting a string col is fine.
+        #     self.df_train_raw.insert(0, "timestamp", np.arange(1, len(self.df_train_raw) + 1))
+        #     self.df_test_raw.insert(0, "timestamp", np.arange(1, len(self.df_test_raw) + 1))
 
         # Handle NaNs
         self.df_train_raw.fillna(0, inplace=True)

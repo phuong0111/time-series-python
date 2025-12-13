@@ -48,16 +48,21 @@ class BaseAnomalyDetector(ABC):
 
         self.model.compile(optimizer=optimizer, loss=loss_fn)
 
-    def train(self, X_train, validation_split=0.1):
+    def train(self, X_train, validation_split=0.1, loss_name=None):
         save_dir = self.config.checkpoint_dir
         os.makedirs(save_dir, exist_ok=True)
         
-        checkpoint_path = os.path.join(save_dir, f"{self.config.model_type}_best.keras")
+        if loss_name:
+            # e.g., LSTM_AE_MSE_best.keras
+            filename = f"{self.config.model_type}_{loss_name}_best.keras"
+        else:
+            filename = f"{self.config.model_type}_best.keras"
+        checkpoint_path = os.path.join(save_dir, filename)
         
         callbacks = [
             EarlyStopping(
                 monitor='val_loss', 
-                patience=5, 
+                patience=25, 
                 restore_best_weights=True,
                 verbose=1
             ),

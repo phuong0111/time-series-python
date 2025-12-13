@@ -1,3 +1,4 @@
+# src/model/tcn_ae.py
 from tensorflow.keras.layers import Input, Conv1D, SpatialDropout1D
 from tensorflow.keras.models import Model
 from .base import BaseAnomalyDetector
@@ -10,11 +11,13 @@ class TCNAutoencoder(BaseAnomalyDetector):
         # === 1. Input ===
         inp = Input(shape=self.input_shape)
 
-        # === 2. Encoder (Dilated Convs) ===
+        # === 2. Encoder ===
         x = inp
-        # Stack dilated convolutions to increase receptive field
-        for dilation in cfg.dilations:
-            x = Conv1D(filters=cfg.nb_filters, 
+        # ZIP the lists to get specific filters for specific dilation
+        # Layer 1: filters=32, dilation=1
+        # Layer 2: filters=64, dilation=2
+        for filters, dilation in zip(cfg.nb_filters, cfg.dilations):
+            x = Conv1D(filters=filters, 
                        kernel_size=cfg.kernel_size, 
                        dilation_rate=dilation,
                        padding='causal', 
@@ -22,24 +25,22 @@ class TCNAutoencoder(BaseAnomalyDetector):
             x = SpatialDropout1D(self.config.dropout)(x)
 
         # === 3. Bottleneck ===
-        # Compression to latent_dim (preserving time dimension)
         bottleneck = Conv1D(filters=self.config.latent_dim, 
                             kernel_size=1,
                             padding='same', 
                             activation=cfg.activation)(x)
 
         # === 4. Decoder ===
-        # Symmetric reconstruction using standard convolutions
+        # Reverse both lists to reconstruct symmetrically
         x = bottleneck
-        for dilation in reversed(cfg.dilations):
-            x = Conv1D(filters=cfg.nb_filters, 
+        for filters, dilation in zip(reversed(cfg.nb_filters), reversed(cfg.dilations)):
+            x = Conv1D(filters=filters, 
                        kernel_size=cfg.kernel_size,
                        padding='same', 
                        activation=cfg.activation)(x)
             x = SpatialDropout1D(self.config.dropout)(x)
 
         # === 5. Output ===
-        # Project back to original feature dimension
         out = Conv1D(filters=n_features, 
                      kernel_size=1,
                      padding='same', 

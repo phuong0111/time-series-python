@@ -16,7 +16,7 @@ class MSEStrategy(TrainingStrategy):
     def execute(self, model_wrapper, X_train, X_test=None, y_test=None):
         self.logger.info("Executing Standard MSE Training")
         model_wrapper.compile_model(custom_weights=None) 
-        model_wrapper.train(X_train)
+        model_wrapper.train(X_train, loss_name=self.config.loss_type.value)
         return None
 
 class RFWeightedStrategy(TrainingStrategy):
@@ -38,7 +38,7 @@ class RFWeightedStrategy(TrainingStrategy):
         )
         
         model_wrapper.compile_model(custom_weights=weights)
-        model_wrapper.train(X_train)
+        model_wrapper.train(X_train, loss_name=self.config.loss_type.value)
         
         return weights
         
@@ -56,7 +56,7 @@ class FeatureScaledStrategy(TrainingStrategy):
         model_wrapper.config.epochs = cfg.pretrain_epochs
         
         model_wrapper.compile_model(custom_weights=None)
-        model_wrapper.train(X_train)
+        model_wrapper.train(X_train, loss_name=f"{self.config.loss_type.value}_PRETRAIN")
         
         # 2. Calculate Weights
         self.logger.info("(B) Calculating Feature Weights...")
@@ -71,6 +71,6 @@ class FeatureScaledStrategy(TrainingStrategy):
         self.logger.info("(C) Fine-tuning phase...")
         model_wrapper.config.epochs = original_epochs
         model_wrapper.compile_model(custom_weights=weights)
-        model_wrapper.train(X_train)
+        model_wrapper.train(X_train, loss_name=self.config.loss_type.value)
         
         return weights
