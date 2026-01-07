@@ -9,68 +9,93 @@ class TrainingStrategy(ABC):
         self.logger = logging.getLogger(self.__class__.__name__)
 
     @abstractmethod
-    def execute(self, model_wrapper, X_train, X_test=None, y_test=None):
+    def execute(self, model_wrapper, X_train, X_val=None):
+        """
+        Executes training.
+        Args:
+            model_wrapper: Instance of BaseAnomalyDetector
+            X_train: Training data
+            X_val: Validation data (Optional)
+        Returns:
+            (history, weights): Tuple of Keras history and learned feature weights (if any)
+        """
         pass
 
 class MSEStrategy(TrainingStrategy):
-    def execute(self, model_wrapper, X_train, X_test=None, y_test=None):
+    def execute(self, model_wrapper, X_train, X_val=None):
         self.logger.info("Executing Standard MSE Training")
+        
+        # 1. Prepare Validation
+        val_data = (X_val, X_val) if X_val is not None else None
+        
+        # 2. Compile & Train
         model_wrapper.compile_model(custom_weights=None) 
-        model_wrapper.train(X_train, loss_name=self.config.loss_type.value)
-        return None
+        history = model_wrapper.train(X_train, validation_data=val_data, loss_name=self.config.loss_type.value)
+        
+        return history, None
 
 class RFWeightedStrategy(TrainingStrategy):
-    def execute(self, model_wrapper, X_train, X_test=None, y_test=None):
-        self.logger.info("Executing Random Forest Weighted Training")
+    def execute(self, model_wrapper, X_train, X_val=None):
+        self.logger.info("Executing Random Forest Weighted Training (Unsupervised)")
         
-        if X_test is None or y_test is None:
-            raise ValueError("RF Strategy requires X_test and y_test")
-
-        # Extract config values
+        # Extract config
         cfg = self.config.rf_weighted
         
-        # Pass to calculator
-        weights = WeightCalculator.calculate_rf_importance(
-            X_test, 
-            y_test, 
+        # 1. Calculate Unsupervised Importance (Real vs Fake)
+        # We use X_train to find which features define the "normal" structure
+        weights = WeightCalculator.calculate_unsupervised_rf_importance(
+            X_train, 
             n_estimators=cfg.n_estimators, 
             random_state=cfg.random_state
         )
         
+        # 2. Prepare Validation
+        val_data = (X_val, X_val) if X_val is not None else None
+
+        # 3. Train with Weights
         model_wrapper.compile_model(custom_weights=weights)
-        model_wrapper.train(X_train, loss_name=self.config.loss_type.value)
+        history = model_wrapper.train(X_train, validation_data=val_data, loss_name=self.config.loss_type.value)
         
-        return weights
-        
+        return history, weights
 
 class FeatureScaledStrategy(TrainingStrategy):
-    def execute(self, model_wrapper, X_train, X_test=None, y_test=None):
+    def execute(self, model_wrapper, X_train, X_val=None):
         self.logger.info("Executing Feature-Scaled Reconstruction Training")
         
-        # Extract config values
         cfg = self.config.feature_scaled
+        val_data = (X_val, X_val) if X_val is not None else None
         
-        # 1. Pre-training
-        self.logger.info(f"(A) Pre-training phase ({self.config.feature_scaled.pretrain_epochs} epochs)...")
+        # 1. Pre-training (Standard MSE)
+        self.logger.info(f"(A) Pre-training phase ({cfg.pretrain_epochs} epochs)...")
+        
+        # Temporarily reduce epochs for pre-training
         original_epochs = model_wrapper.config.epochs
-        model_wrapper.config.epochs = cfg.pretrain_epochs
+        # If pretrain_epochs is small, we might not need validation/callbacks here, 
+        # but passing them is safer if pretrain is long.
         
         model_wrapper.compile_model(custom_weights=None)
-        model_wrapper.train(X_train, loss_name=f"{self.config.loss_type.value}_PRETRAIN")
+        # We manually fit here to avoid overwriting the main checkpoint or stopping too early
+        model_wrapper.model.fit(
+            X_train, X_train,
+            epochs=cfg.pretrain_epochs,
+            batch_size=model_wrapper.config.batch_size,
+            verbose=1,
+            shuffle=True
+        )
         
-        # 2. Calculate Weights
+        # 2. Calculate Weights (Inverse Reconstruction Error)
         self.logger.info("(B) Calculating Feature Weights...")
-        # Pass epsilon to calculator
         weights = WeightCalculator.calculate_inverse_mse(
             model_wrapper.model, 
             X_train,
             epsilon=cfg.epsilon
         )
         
-        # 3. Fine-tuning
+        # 3. Fine-tuning (Weighted MSE)
         self.logger.info("(C) Fine-tuning phase...")
-        model_wrapper.config.epochs = original_epochs
+        # Restore original epoch count
+        # Note: The model continues from current weights (Transfer Learning)
         model_wrapper.compile_model(custom_weights=weights)
-        model_wrapper.train(X_train, loss_name=self.config.loss_type.value)
+        history = model_wrapper.train(X_train, validation_data=val_data, loss_name=self.config.loss_type.value)
         
-        return weights
+        return history, weights

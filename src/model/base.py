@@ -8,6 +8,7 @@ from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from src.config import ModelConfig
+# Ensure this import path matches where you put the loss definitions
 from src.loss.definitions import get_weighted_mse 
 
 class BaseAnomalyDetector(ABC):
@@ -48,12 +49,14 @@ class BaseAnomalyDetector(ABC):
 
         self.model.compile(optimizer=optimizer, loss=loss_fn)
 
-    def train(self, X_train, validation_split=0.1, loss_name=None):
+    def train(self, X_train, validation_data=None, validation_split=0.1, loss_name=None):
+        """
+        Updated to support explicit validation sets (X_val, X_val).
+        """
         save_dir = self.config.checkpoint_dir
         os.makedirs(save_dir, exist_ok=True)
         
         if loss_name:
-            # e.g., LSTM_AE_MSE_best.keras
             filename = f"{self.config.model_type}_{loss_name}_best.keras"
         else:
             filename = f"{self.config.model_type}_best.keras"
@@ -62,7 +65,7 @@ class BaseAnomalyDetector(ABC):
         callbacks = [
             EarlyStopping(
                 monitor='val_loss', 
-                patience=25, 
+                patience=15, 
                 restore_best_weights=True,
                 verbose=1
             ),
@@ -72,27 +75,35 @@ class BaseAnomalyDetector(ABC):
                 save_best_only=True,
                 save_weights_only=False,
                 mode='min',
-                verbose=1
+                verbose=0
             )
         ]
         
-        self.logger.info(f"Training started. Checkpoint: {checkpoint_path}")
+        # Handle Validation: Priority to explicit data, else fallback to split
+        fit_args = {
+            "x": X_train,
+            "y": X_train, # Autoencoder target is input
+            "epochs": self.config.epochs,
+            "batch_size": self.config.batch_size,
+            "callbacks": callbacks,
+            "verbose": 1,
+            "shuffle": True
+        }
         
-        history = self.model.fit(
-            X_train, X_train, # Autoencoder: Input == Target
-            epochs=self.config.epochs,
-            batch_size=32, 
-            validation_split=validation_split,
-            shuffle=True,
-            callbacks=callbacks,
-            verbose=1
-        )
+        if validation_data is not None:
+            # validation_data must be (X_val, X_val) for Autoencoders
+            fit_args["validation_data"] = validation_data
+        else:
+            fit_args["validation_split"] = validation_split
+
+        self.logger.info(f"Training started. Saving to {checkpoint_path}")
+        history = self.model.fit(**fit_args)
         return history
 
     def predict(self, X):
         return self.model.predict(X, verbose=0)
 
-    def get_anomaly_score(self, X, feature_weights=None):
+    def get_anomaly_score(self, X, feature_weights=None, mode="last_point"):
         """
         Calculates reconstruction error. 
         If feature_weights is provided, calculates Weighted MSE.
@@ -100,6 +111,7 @@ class BaseAnomalyDetector(ABC):
         Args:
             X: Input data (Samples, Time, Features)
             feature_weights: Optional[np.array] shape (n_features,).
+            mode: "mean" (average whole window) or "last_point" (error of t)
         Returns:
             np.array shape (n_samples,): Anomaly scores per sample.
         """
@@ -114,8 +126,16 @@ class BaseAnomalyDetector(ABC):
             weights_broadcast = feature_weights[np.newaxis, np.newaxis, :]
             squared_error = squared_error * weights_broadcast
             
-        # 3. Mean over Time and Features
-        score = np.mean(squared_error, axis=(1, 2))
+        # 3. Aggregation Strategy
+        if mode == "last_point":
+            # Only look at the error of the most recent time step (-1)
+            # Shape: (Samples, Features) -> mean -> (Samples,)
+            last_point_error = squared_error[:, -1, :]
+            score = np.mean(last_point_error, axis=1)
+        else:
+            # Standard: Average over all time steps and features
+            score = np.mean(squared_error, axis=(1, 2))
+            
         return score
     
     def evaluate(self, X_test, y_test, feature_weights=None):
@@ -125,8 +145,8 @@ class BaseAnomalyDetector(ABC):
         """
         self.logger.info("Starting Evaluation with F1-Score Threshold Scan...")
         
-        # 1. Get Scores
-        scores = self.get_anomaly_score(X_test, feature_weights=feature_weights)
+        # 1. Get Scores (Using Last Point strategy for precision)
+        scores = self.get_anomaly_score(X_test, feature_weights=feature_weights, mode="last_point")
         
         # 2. Calculate ROC AUC
         roc_score = roc_auc_score(y_test, scores)
@@ -135,8 +155,6 @@ class BaseAnomalyDetector(ABC):
         precision, recall, thresholds = precision_recall_curve(y_test, scores)
         
         # Calculate F1 for all thresholds
-        # Note: Precision/Recall arrays are 1 element longer than thresholds
-        # We assume thresholds[i] corresponds to precision[i], recall[i]
         numerator = 2 * precision * recall
         denominator = precision + recall + 1e-8 # Avoid div by zero
         f1_scores = numerator / denominator

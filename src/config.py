@@ -38,12 +38,12 @@ class DataConfig(BaseModel):
 # ==========================================
 class LSTMOptions(BaseModel):
     lstm_units: List[int] = [64, 32] 
-    activation: str = "relu"
+    activation: str = "tanh"
 
 class TCNOptions(BaseModel):
     nb_filters: List[int] = [32, 64]
     kernel_size: int = 3
-    dilations: List[int] = [1, 2]
+    dilations: List[int] = [1, 2, 4, 8]
     activation: str = "relu"
     output_activation: str = "linear"
     
@@ -65,6 +65,8 @@ class TransformerOptions(BaseModel):
     
 class ModelConfig(BaseModel):
     model_type: ModelType = ModelType.LSTM_AE 
+    
+    batch_size: int = 8
     
     latent_dim: int = 8
     dropout: float = 0.2

@@ -13,45 +13,41 @@ class SMDLoader(BaseDataLoader):
         label_path = root / "test_label" / f"{machine_name}.txt"
         
         if not train_path.exists():
-            self.logger.error(f"File not found: {train_path}")
             raise FileNotFoundError(f"SMD file not found: {train_path}")
 
         self.logger.info(f"Loading {machine_name}...")
 
-        self.df_train_raw = pd.read_csv(train_path, header=None)
-        self.df_test_raw = pd.read_csv(test_path, header=None)
+        # Load as float32 directly to save memory
+        self.df_train_raw = pd.read_csv(train_path, header=None, dtype=np.float32)
+        self.df_test_raw = pd.read_csv(test_path, header=None, dtype=np.float32)
         
         if label_path.exists():
-            self.df_label_raw = pd.read_csv(label_path, header=None)
+            self.df_label_raw = pd.read_csv(label_path, header=None, dtype=np.float32)
         else:
             self.df_label_raw = None
 
     def preprocess(self):
-        # 2. Add Timestamp (same as before)
-        # if "timestamp" not in self.df_train_raw.columns:
-        #     # Note: Since header=None, columns are integers 0, 1, 2...
-        #     # We insert at index 0. The column name "timestamp" is symbolic here 
-        #     # as the dataframe has integer columns, but inserting a string col is fine.
-        #     self.df_train_raw.insert(0, "timestamp", np.arange(1, len(self.df_train_raw) + 1))
-        #     self.df_test_raw.insert(0, "timestamp", np.arange(1, len(self.df_test_raw) + 1))
+        # 1. Handle Missing Values: Interpolate is better than fillna(0) for time series
+        # Limit direction='both' handles edges
+        self.df_train_raw = self.df_train_raw.interpolate(limit_direction='both').fillna(0)
+        self.df_test_raw = self.df_test_raw.interpolate(limit_direction='both').fillna(0)
 
-        # Handle NaNs
-        self.df_train_raw.fillna(0, inplace=True)
-        self.df_test_raw.fillna(0, inplace=True)
+        # 2. Scale
+        # Fit scaler ONLY on train data
+        X_train_scaled = self.scaler.fit_transform(self.df_train_raw.values).astype(np.float32)
+        X_test_scaled = self.scaler.transform(self.df_test_raw.values).astype(np.float32)
 
-        # 3. Scale
-        X_train_scaled = self.scaler.fit_transform(self.df_train_raw.values)
-        X_test_scaled = self.scaler.transform(self.df_test_raw.values)
-
-        # 4. Windowing
+        # 3. Windowing
         X_train, _ = self.create_sliding_window(X_train_scaled)
         
         y_test = None
         if self.df_label_raw is not None:
             labels = self.df_label_raw.values.flatten()
+            # Truncate to match length (sometimes SMD labels vs data differ by 1-2 rows)
             min_len = min(len(labels), len(X_test_scaled))
             labels = labels[:min_len]
             X_test_scaled = X_test_scaled[:min_len]
+            
             X_test, y_test = self.create_sliding_window(X_test_scaled, labels)
         else:
             X_test, _ = self.create_sliding_window(X_test_scaled)

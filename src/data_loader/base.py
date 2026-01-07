@@ -4,8 +4,10 @@ import pickle
 import hashlib
 from pathlib import Path
 from abc import ABC, abstractmethod
+from typing import Tuple, Optional
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
 from src.config import DataConfig
 
 class BaseDataLoader(ABC):
@@ -13,91 +15,97 @@ class BaseDataLoader(ABC):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.config = config
         self.scaler = MinMaxScaler()
+        
+        # Data containers
         self.train_data = None
+        self.val_data = None  # New: Validation set for Early Stopping
         self.test_data = None
         
         if self.config.use_cache:
-            import os
             os.makedirs(self.config.cache_dir, exist_ok=True)
         
     @abstractmethod
     def load_raw(self):
-        """Load CSV files from disk."""
         pass
 
     @abstractmethod
     def preprocess(self):
-        """Clean, scale, and window the data."""
         pass
 
-    def create_sliding_window(self, data, labels=None):
+    def create_sliding_window(self, data: np.ndarray, labels: np.ndarray = None) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         """
         Convert 2D (Time, Feat) -> 3D (Samples, Window, Feat).
-        Uses vectorized stride_tricks for performance.
+        Optimized for memory and float32.
         """
         ws = self.config.window_size
         
-        # 1. Create Sliding Window
-        # Default Output of sliding_window_view: (Samples, Features, Window_Size)
-        X = np.lib.stride_tricks.sliding_window_view(data, window_shape=ws, axis=0)
+        # 1. Create Window View (Returns: Samples, Features, Window_Size) due to axis=0 default behavior
+        # Note: sliding_window_view creates a read-only view.
+        X_view = np.lib.stride_tricks.sliding_window_view(data, window_shape=ws, axis=0)
         
-        # 2. Swap axes to match LSTM format: (Samples, Window_Size, Features)
-        X = np.moveaxis(X, -1, 1)
+        # 2. Swap axes to (Samples, Window_Size, Features) and copy to ensure memory is contiguous
+        X = np.moveaxis(X_view, -1, 1).copy().astype(np.float32)
         
         y = None
         if labels is not None:
-            # Handle labels: If ANY point in window is anomaly -> Label = 1
-            label_windows = np.lib.stride_tricks.sliding_window_view(labels, window_shape=ws, axis=0)
-            y = np.any(label_windows == 1, axis=1).astype(int)
+            # OPTION 1: "Any" (Current) - Smears anomalies
+            # label_windows = np.lib.stride_tricks.sliding_window_view(labels, window_shape=ws, axis=0)
+            # y = np.any(label_windows == 1, axis=1).astype(int)
+            
+            # OPTION 2: "Last Point" (Recommended) - Exact timestamp matching
+            # We simply take the labels starting from 'window_size - 1'
+            y = labels[ws-1:].astype(np.float32)
             
         return X, y
 
-    def get_data(self):
-        """Public interface to get processed data."""
-        self.load_raw()
-        self.preprocess()
-        return self.train_data, self.test_data
-    
     def _get_cache_path(self) -> Path:
-        """
-        Generates a unique filename based on the configuration.
-        Format: {Dataset}_{Entity}_{WindowSize}_{Hash}.pkl
-        """
-        # 1. Base identifier
+        """Generates a unique filename based on config hash."""
         name_parts = [self.config.dataset_type.value, str(self.config.window_size)]
-        
-        # 2. Add specific identifier (e.g. machine name)
         if self.config.smd:
-            name_parts.append(self.config.smd.entity_id)
+            name_parts.append(str(self.config.smd.entity_id))
             
-        # 3. Create a unique hash for complex configs (like column selection)
-        # We stringify the config and hash it to catch ANY change (e.g. changing columns)
         config_str = self.config.model_dump_json()
-        config_hash = hashlib.md5(config_str.encode()).hexdigest()[:8] # Short hash
+        config_hash = hashlib.md5(config_str.encode()).hexdigest()[:8]
         
         filename = f"{'_'.join(name_parts)}_{config_hash}.pkl"
         return Path(self.config.cache_dir) / filename
 
     def get_data(self):
-        # 1. Try to Load from Cache
+        """
+        Public interface.
+        Returns: (X_train, None), (X_val, None), (X_test, y_test)
+        """
+        # 1. Try Cache
         if self.config.use_cache:
             cache_path = self._get_cache_path()
             if cache_path.exists():
                 self.logger.info(f"Loading from cache: {cache_path}")
                 with open(cache_path, "rb") as f:
-                    self.train_data, self.test_data = pickle.load(f)
-                return self.train_data, self.test_data
+                    self.train_data, self.val_data, self.test_data = pickle.load(f)
+                return self.train_data, self.val_data, self.test_data
 
-        # 2. If no cache, Process from Scratch
+        # 2. Process
         self.logger.info("Cache not found. Processing raw data...")
         self.load_raw()
         self.preprocess()
         
-        # 3. Save to Cache
+        # 3. Automatic Validation Split (if not already handled in preprocess)
+        # We split the Benign Training data to create a validation set
+        if self.val_data is None and self.train_data is not None:
+            X_train, _ = self.train_data
+            # Split 15% for validation (shuffle=False to respect time order is usually preferred in TS, 
+            # but for purely reconstruction based AE, random split is often okay. 
+            # We stick to Shuffle=False to simulate 'future' benign data)
+            X_t, X_v = train_test_split(X_train, test_size=0.15, shuffle=False)
+            self.train_data = (X_t, None)
+            self.val_data = (X_v, None)
+            self.logger.info(f"Created Validation Split: {X_v.shape}")
+
+        # 4. Save Cache
         if self.config.use_cache:
             cache_path = self._get_cache_path()
             self.logger.info(f"Saving cache to: {cache_path}")
             with open(cache_path, "wb") as f:
-                pickle.dump((self.train_data, self.test_data), f)
+                pickle.dump((self.train_data, self.val_data, self.test_data), f)
                 
-        return self.train_data, self.test_data
+        return self.train_data, self.val_data, self.test_data
