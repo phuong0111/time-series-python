@@ -27,10 +27,10 @@ class SMDLoader(BaseDataLoader):
             self.df_label_raw = None
 
     def preprocess(self):
-        # 1. Handle Missing Values: Interpolate is better than fillna(0) for time series
-        # Limit direction='both' handles edges
-        self.df_train_raw = self.df_train_raw.interpolate(limit_direction='both').fillna(0)
-        self.df_test_raw = self.df_test_raw.interpolate(limit_direction='both').fillna(0)
+        # 1. Handle Missing Values: Causal interpolation (forward fill is safe)
+        # Avoid limit_direction='both' on the whole series as it can leak future data into past
+        self.df_train_raw = self.df_train_raw.ffill().bfill(limit=10).fillna(0)
+        self.df_test_raw = self.df_test_raw.ffill().bfill(limit=10).fillna(0)
 
         # 2. Scale
         # Fit scaler ONLY on train data

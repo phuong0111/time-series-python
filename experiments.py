@@ -41,7 +41,7 @@ def run_single_experiment(dataset_type, model_type, loss_type):
     
     # --- CONFIGURE DATASET ---
     cfg.data.dataset_type = dataset_type
-    cfg.data.batch_size = 32
+    cfg.model.batch_size = 1024
     cfg.data.window_size = 80  # Consistent window size
     
     if dataset_type == DatasetType.SMD:
@@ -51,15 +51,13 @@ def run_single_experiment(dataset_type, model_type, loss_type):
     elif dataset_type == DatasetType.CIC:
         cfg.data.data_path = "data/CIC-DDoS2019/cicddos2019_dataset.csv"
         cfg.data.cic = CICOptions(
-            selected_columns=[
-            'Flow Duration', 'Total Fwd Packets', 'Total Backward Packets',
-            'Fwd Packets Length Total', 'Bwd Packets Length Total',
-            'Fwd Packet Length Max', 'Fwd Packet Length Min', 'Fwd Packet Length Mean',
-            'Bwd Packet Length Max', 'Bwd Packet Length Min', 'Bwd Packet Length Mean',
-            'Flow Bytes/s', 'Flow Packets/s', 'Flow IAT Mean', 'Flow IAT Max',
-            'Fwd IAT Total', 'Fwd IAT Max', 'FIN Flag Count', 'SYN Flag Count', 'RST Flag Count'
-            ],
-            label_column="Class"
+            selected_columns=["Flow Duration","Total Fwd Packets","Total Backward Packets","Total Length of Fwd Packets",
+                            "Total Length of Bwd Packets","Fwd Packet Length Max","Fwd Packet Length Min",
+                            "Fwd Packet Length Mean","Bwd Packet Length Max","Bwd Packet Length Min",
+                            "Bwd Packet Length Mean","Flow Bytes/s","Flow Packets/s","Flow IAT Mean","Flow IAT Max",
+                            "Fwd IAT Total","Fwd IAT Max","FIN Flag Count","SYN Flag Count","RST Flag Count"
+                            ],
+            label_column="Label"
         )
 
     # --- CONFIGURE MODEL ---
@@ -183,7 +181,8 @@ def run_single_experiment(dataset_type, model_type, loss_type):
 def main():
     # === DEFINE THE GRID ===
     # Using lists to define the grid search space
-    datasets = [DatasetType.SMD, DatasetType.CIC] 
+    datasets = [DatasetType.CIC] 
+    # datasets = [DatasetType.SMD, DatasetType.CIC] 
     # Testing all updated architectures
     models = [ModelType.LSTM_AE, ModelType.TCN_AE, ModelType.TRANSFORMER_AE]
     # Testing baseline MSE vs your custom losses

@@ -16,8 +16,8 @@ class TCNAutoencoder(BaseAnomalyDetector):
         prev_x = x
         
         # 1. Main Branch
-        # Padding 'same' is critical for AE reconstruction
-        c = Conv1D(filters, kernel_size, dilation_rate=dilation_rate, padding='same')(x)
+        # Padding 'causal' prevents future data from leaking into past predictions
+        c = Conv1D(filters, kernel_size, dilation_rate=dilation_rate, padding='causal')(x)
         c = LayerNormalization()(c)
         c = Activation(self.config.tcn.activation)(c)
         c = SpatialDropout1D(dropout)(c)

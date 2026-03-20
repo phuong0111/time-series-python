@@ -34,7 +34,7 @@ class LSTMAutoencoder(BaseAnomalyDetector):
         # === Decoder ===
         x = decoded
         for units in reversed(cfg.lstm_units):
-            x = Bidirectional(LSTM(units, activation=cfg.activation, return_sequences=True))(x)
+            x = LSTM(units, activation=cfg.activation, return_sequences=True)(x)
             x = LayerNormalization()(x)
             x = Dropout(self.config.dropout)(x)
             

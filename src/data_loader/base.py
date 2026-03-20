@@ -96,7 +96,7 @@ class BaseDataLoader(ABC):
             # Split 15% for validation (shuffle=False to respect time order is usually preferred in TS, 
             # but for purely reconstruction based AE, random split is often okay. 
             # We stick to Shuffle=False to simulate 'future' benign data)
-            X_t, X_v = train_test_split(X_train, test_size=0.15, shuffle=False)
+            X_t, X_v = train_test_split(X_train, test_size=self.config.validation_split, shuffle=False)
             self.train_data = (X_t, None)
             self.val_data = (X_v, None)
             self.logger.info(f"Created Validation Split: {X_v.shape}")

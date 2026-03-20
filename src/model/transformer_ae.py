@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 from tensorflow.keras.layers import (
     Input, Dense, Dropout, LayerNormalization, 
-    MultiHeadAttention, Add, Layer
+    MultiHeadAttention, Add, Layer, GlobalAveragePooling1D, RepeatVector
 )
 from tensorflow.keras.models import Model
 from .base import BaseAnomalyDetector
@@ -15,30 +15,31 @@ class SinePositionEncoding(Layer):
         super().__init__(**kwargs)
         self.max_len = max_len
 
-    def call(self, x):
-        # x shape: (batch, steps, features)
-        steps = tf.shape(x)[1]
-        d_model = tf.shape(x)[2]
+    def build(self, input_shape):
+        steps = input_shape[1]
+        d_model = input_shape[2]
         
-        # Create positions (0, 1, ... steps-1)
-        positions = tf.range(start=0, limit=steps, delta=1, dtype=tf.float32)
-        positions = tf.expand_dims(positions, 1) # (steps, 1)
-        
-        # Create frequencies
-        i = tf.range(start=0, limit=d_model, delta=1, dtype=tf.float32)
-        angle_rates = 1 / tf.pow(10000.0, (2 * (i // 2)) / tf.cast(d_model, tf.float32))
-        
+        positions = np.arange(steps)[:, np.newaxis]
+        i = np.arange(d_model)[np.newaxis, :]
+        angle_rates = 1 / np.power(10000.0, (2 * (i // 2)) / np.float32(d_model))
         angle_rads = positions * angle_rates
         
-        # Apply sin to even indices, cos to odd
-        sines = tf.math.sin(angle_rads[:, 0::2])
-        cosines = tf.math.cos(angle_rads[:, 1::2])
+        pos_encoding = np.zeros((steps, d_model), dtype=np.float32)
+        pos_encoding[:, 0::2] = np.sin(angle_rads[:, 0::2])
+        pos_encoding[:, 1::2] = np.cos(angle_rads[:, 1::2])
         
-        # Concatenate back
-        pos_encoding = tf.concat([sines, cosines], axis=-1)
+        pos_encoding = pos_encoding[np.newaxis, ...]
         
-        # Add to input (broadcast over batch)
-        return x + tf.cast(pos_encoding, x.dtype)
+        self.pos_encoding = self.add_weight(
+            name="pos_encoding",
+            shape=pos_encoding.shape,
+            initializer=tf.constant_initializer(pos_encoding),
+            trainable=False
+        )
+        super().build(input_shape)
+
+    def call(self, x):
+        return x + tf.cast(self.pos_encoding, x.dtype)
 
 class TransformerAutoencoder(BaseAnomalyDetector):
     def build_model(self):
@@ -63,10 +64,13 @@ class TransformerAutoencoder(BaseAnomalyDetector):
             x_ff = Dropout(self.config.dropout)(x_ff)
             
         # === 3. Bottleneck ===
-        encoded = Dense(self.config.latent_dim, activation=cfg.activation)(x_ff)
+        pooled = GlobalAveragePooling1D()(x_ff)
+        encoded = Dense(self.config.latent_dim, activation=cfg.activation)(pooled)
 
         # === 4. Decoder ===
-        x = encoded
+        repeated_encoded = RepeatVector(self.input_shape[0])(encoded)
+        x = repeated_encoded
+        
         for unit in reversed(cfg.ff_units):
              x = Dense(unit, activation=cfg.activation)(x)
              x = Dropout(self.config.dropout)(x)
@@ -77,11 +81,11 @@ class TransformerAutoencoder(BaseAnomalyDetector):
         att2 = MultiHeadAttention(num_heads=cfg.num_heads, key_dim=cfg.key_dim)(x, x)
         
         # Skip Connection logic
-        # We need to project 'encoded' to match 'att2' shape for the add
-        if encoded.shape[-1] != att2.shape[-1]:
-             skip = Dense(att2.shape[-1], activation=cfg.activation)(encoded)
+        # We need to project 'repeated_encoded' to match 'att2' shape for the add
+        if repeated_encoded.shape[-1] != att2.shape[-1]:
+             skip = Dense(att2.shape[-1], activation=cfg.activation)(repeated_encoded)
         else:
-             skip = encoded
+             skip = repeated_encoded
              
         x = Add()([att2, skip])
         x = LayerNormalization(epsilon=cfg.norm_epsilon)(x)

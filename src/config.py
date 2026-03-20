@@ -18,7 +18,7 @@ class DataConfig(BaseModel):
     data_path: str = "data/SMD"                  
     # --------------------------------
     window_size: int = 80
-    batch_size: int = 32
+    validation_split: float = 0.15
     use_cache: bool = True
     cache_dir: str = "./cache"
     
@@ -66,7 +66,7 @@ class TransformerOptions(BaseModel):
 class ModelConfig(BaseModel):
     model_type: ModelType = ModelType.LSTM_AE 
     
-    batch_size: int = 8
+    batch_size: int = 64
     
     latent_dim: int = 8
     dropout: float = 0.2

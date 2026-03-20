@@ -19,7 +19,10 @@ def run_workflow():
 
     # 2. Load Data
     loader = DataLoaderFactory.get_loader(app_config.data)
-    (X_train, _), (X_test, y_test) = loader.get_data()
+    train_set, val_set, test_set = loader.get_data()
+    X_train, _ = train_set
+    X_val, _ = val_set if val_set else (None, None)
+    X_test, y_test = test_set
 
     # 3. Build Model
     model_wrapper = ModelFactory.get_model(app_config.model, input_shape=(X_train.shape[1], X_train.shape[2]))
@@ -29,7 +32,7 @@ def run_workflow():
     strategy = LossStrategyFactory.get_strategy(app_config.loss)
     
     # The strategy handles pre-training, weight calc, and compilation internally
-    trained_weights = strategy.execute(model_wrapper, X_train, X_test, y_test)
+    history, trained_weights = strategy.execute(model_wrapper, X_train, X_val=X_val)
     # ---------------------------------------------------------
 
     # 5. Evaluate

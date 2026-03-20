@@ -10,6 +10,7 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from src.config import ModelConfig
 # Ensure this import path matches where you put the loss definitions
 from src.loss.definitions import get_weighted_mse 
+from src.utils.metrics import evaluate_with_pa
 
 class BaseAnomalyDetector(ABC):
     def __init__(self, config: ModelConfig, input_shape: tuple):
@@ -65,7 +66,7 @@ class BaseAnomalyDetector(ABC):
         callbacks = [
             EarlyStopping(
                 monitor='val_loss', 
-                patience=15, 
+                patience=5, 
                 restore_best_weights=True,
                 verbose=1
             ),
@@ -151,33 +152,20 @@ class BaseAnomalyDetector(ABC):
         # 2. Calculate ROC AUC
         roc_score = roc_auc_score(y_test, scores)
         
-        # 3. Precision-Recall Curve to find Best Threshold
-        precision, recall, thresholds = precision_recall_curve(y_test, scores)
+        # 3. Find Best Threshold with Point Adjustment
+        pa_results = evaluate_with_pa(y_test, scores, steps=200)
         
-        # Calculate F1 for all thresholds
-        numerator = 2 * precision * recall
-        denominator = precision + recall + 1e-8 # Avoid div by zero
-        f1_scores = numerator / denominator
-        
-        # We ignore the last element (which corresponds to no threshold)
-        if len(thresholds) < len(f1_scores):
-            f1_scores = f1_scores[:-1]
-            precision = precision[:-1]
-            recall = recall[:-1]
-
-        # Find Best F1
-        best_idx = np.argmax(f1_scores)
-        best_threshold = thresholds[best_idx]
-        best_f1 = f1_scores[best_idx]
-        best_precision = precision[best_idx]
-        best_recall = recall[best_idx]
+        best_threshold = pa_results["threshold"]
+        best_f1 = pa_results["f1"]
+        best_precision = pa_results["precision"]
+        best_recall = pa_results["recall"]
 
         self.logger.info(f"Evaluation Results:")
         self.logger.info(f"  ROC-AUC:        {roc_score:.4f}")
         self.logger.info(f"  Best Threshold: {best_threshold:.6f}")
-        self.logger.info(f"  Best F1-Score:  {best_f1:.4f}")
-        self.logger.info(f"  Precision:      {best_precision:.4f}")
-        self.logger.info(f"  Recall:         {best_recall:.4f}")
+        self.logger.info(f"  Best PA-F1:     {best_f1:.4f}")
+        self.logger.info(f"  PA-Precision:   {best_precision:.4f}")
+        self.logger.info(f"  PA-Recall:      {best_recall:.4f}")
 
         return {
             "roc_auc": roc_score,
