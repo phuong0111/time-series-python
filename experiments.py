@@ -18,7 +18,7 @@ os.environ['TF_DETERMINISTIC_OPS'] = '1'
 from src.config import (
     AppConfig, DataConfig, ModelConfig, LossConfig, 
     DatasetType, ModelType, LossType, 
-    SMDOptions, LSTMOptions, TCNOptions, TransformerOptions,
+    SMDOptions, CICOptions, LSTMOptions, TCNOptions, TransformerOptions,
     FeatureScaledOptions, RFWeightedOptions
 )
 from src.utils.logger import setup_logger
@@ -55,6 +55,19 @@ def run_single_experiment(dataset_type, model_type, loss_type):
     if dataset_type == DatasetType.SMD:
         cfg.data.data_path = "data/SMD"
         cfg.data.smd = SMDOptions(entity_id="machine-1-1")
+    elif dataset_type == DatasetType.CIC:
+        cfg.data.data_path = "data/CIC-DDoS2019/cicddos2019_dataset.csv"
+        cfg.data.cic = CICOptions(
+            label_column="Label",
+            selected_columns=[
+                "Flow Duration", "Total Fwd Packets", "Total Backward Packets",
+                "Total Length of Fwd Packets", "Total Length of Bwd Packets",
+                "Fwd Packet Length Max", "Fwd Packet Length Min", "Fwd Packet Length Mean",
+                "Bwd Packet Length Max", "Bwd Packet Length Min", "Bwd Packet Length Mean",
+                "Flow Bytes/s", "Flow Packets/s", "Flow IAT Mean", "Flow IAT Max",
+                "Fwd IAT Total", "Fwd IAT Max", "FIN Flag Count", "SYN Flag Count", "RST Flag Count"
+            ]
+        )
 
     # --- CONFIGURE MODEL ---
     # All defaults come from config.py (batch=32, epochs=30, lr=0.001, dropout=0.1)
