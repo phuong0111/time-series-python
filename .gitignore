@@ -1,7 +1,38 @@
+# Python
 __pycache__/
-data/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual Environment
 .venv/
+venv/
+
+# UV package manager
+uv.lock
+.python-version
+
+# Environment variables
+.env
+
+# Data & Artifacts (too large for git)
+data/
 cache/
 logs/
-checkpoints
-.env
+checkpoints/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Old reference code
+KSE/

@@ -1,14 +1,23 @@
 import sys
+import os
+import random
 import pandas as pd
 import logging
 import numpy as np
+import tensorflow as tf
 from pathlib import Path
 
-# Update imports to match your project structure
+# === GLOBAL SEED FOR REPRODUCIBILITY ===
+SEED = 42
+random.seed(SEED)
+np.random.seed(SEED)
+tf.random.set_seed(SEED)
+os.environ['TF_DETERMINISTIC_OPS'] = '1'
+
 from src.config import (
     AppConfig, DataConfig, ModelConfig, LossConfig, 
     DatasetType, ModelType, LossType, 
-    SMDOptions, CICOptions, LSTMOptions, TCNOptions, TransformerOptions,
+    SMDOptions, LSTMOptions, TCNOptions, TransformerOptions,
     FeatureScaledOptions, RFWeightedOptions
 )
 from src.utils.logger import setup_logger
@@ -17,7 +26,6 @@ from src.model.factory import ModelFactory
 from src.loss.factory import LossStrategyFactory
 
 # === SETUP LOGGER ===
-# Ensure directory exists
 Path("logs").mkdir(exist_ok=True)
 
 log_config = AppConfig().logging
@@ -41,60 +49,31 @@ def run_single_experiment(dataset_type, model_type, loss_type):
     
     # --- CONFIGURE DATASET ---
     cfg.data.dataset_type = dataset_type
-    cfg.model.batch_size = 1024
     cfg.data.window_size = 80  # Consistent window size
     
     if dataset_type == DatasetType.SMD:
         cfg.data.data_path = "data/SMD"
         cfg.data.smd = SMDOptions(entity_id="machine-1-1")
-        
-    elif dataset_type == DatasetType.CIC:
-        cfg.data.data_path = "data/CIC-DDoS2019/cicddos2019_dataset.csv"
-        cfg.data.cic = CICOptions(
-            selected_columns=["Flow Duration","Total Fwd Packets","Total Backward Packets","Total Length of Fwd Packets",
-                            "Total Length of Bwd Packets","Fwd Packet Length Max","Fwd Packet Length Min",
-                            "Fwd Packet Length Mean","Bwd Packet Length Max","Bwd Packet Length Min",
-                            "Bwd Packet Length Mean","Flow Bytes/s","Flow Packets/s","Flow IAT Mean","Flow IAT Max",
-                            "Fwd IAT Total","Fwd IAT Max","FIN Flag Count","SYN Flag Count","RST Flag Count"
-                            ],
-            label_column="Label"
-        )
 
     # --- CONFIGURE MODEL ---
+    # All defaults come from config.py (batch=32, epochs=30, lr=0.001, dropout=0.1)
     cfg.model.model_type = model_type
-    cfg.model.epochs = 50       # Enough for convergence with EarlyStopping
-    cfg.model.learning_rate = 0.001
-    cfg.model.dropout = 0.2     # Standard dropout for robust training
-    cfg.model.latent_dim = 16   # Bottleneck size
     
-    # Specific Optimizations for NEW Architectures
     if model_type == ModelType.LSTM_AE:
-        # BI-DIRECTIONAL LSTM:
-        # Since Bi-LSTM doubles the output dimension, we use [64, 32] 
-        # which effectively becomes [128, 64] in the forward pass.
         cfg.model.lstm = LSTMOptions(
-            lstm_units=[64, 32], 
-            activation="tanh" # Tanh is more stable for deep LSTMs
+            lstm_units=[128], 
+            activation="relu"
         )
-
     elif model_type == ModelType.TCN_AE:
-        # RESIDUAL TCN:
-        # Residual connections allow us to go deeper without vanishing gradients.
-        # We assume 4 levels of dilation [1, 2, 4, 8] for ~30 step receptive field per layer
         cfg.model.tcn = TCNOptions(
-            nb_filters=[32, 64, 64, 32], # Symmetric filter count often helps AE
             kernel_size=3, 
-            dilations=[1, 2, 4, 8], 
             activation="relu",
             output_activation="linear"
         )
-
     elif model_type == ModelType.TRANSFORMER_AE:
-        # TRANSFORMER (With Positional Encoding):
         cfg.model.transformer = TransformerOptions(
             num_heads=4,
             key_dim=64,
-            ff_units=[128, 64], # Larger FF network for capacity
             norm_epsilon=1e-6,
             activation="relu",
             output_activation="linear"
@@ -119,9 +98,6 @@ def run_single_experiment(dataset_type, model_type, loss_type):
         # Load Data
         logger.info("Loading Data...")
         loader = DataLoaderFactory.get_loader(cfg.data)
-        
-        # Unpack Data: (X_train, X_val, X_test)
-        # Note: Your BaseLoader now returns 3 values (train, val, test)
         train_set, val_set, test_set = loader.get_data()
         
         X_train, _ = train_set
@@ -135,14 +111,8 @@ def run_single_experiment(dataset_type, model_type, loss_type):
         model_wrapper = ModelFactory.get_model(cfg.model, input_shape)
         
         # Train Strategy
-        # The Strategy pattern handles:
-        # 1. Calculating weights (if RF/Feature Scaled)
-        # 2. Compiling the model
-        # 3. Training the model
         strategy = LossStrategyFactory.get_strategy(cfg.loss)
         
-        # Execute Strategy
-        # Returns: History object and any learned feature weights
         logger.info("Executing Training Strategy...")
         history, train_weights = strategy.execute(
             model_wrapper=model_wrapper, 
@@ -151,7 +121,6 @@ def run_single_experiment(dataset_type, model_type, loss_type):
         )
         
         # Evaluate
-        # We pass feature_weights to apply them during anomaly scoring
         logger.info("Evaluating...")
         metrics = model_wrapper.evaluate(X_test, y_test, feature_weights=train_weights)
         
@@ -179,20 +148,18 @@ def run_single_experiment(dataset_type, model_type, loss_type):
         }
 
 def main():
-    # === DEFINE THE GRID ===
-    # Using lists to define the grid search space
-    datasets = [DatasetType.CIC] 
-    # datasets = [DatasetType.SMD, DatasetType.CIC] 
-    # Testing all updated architectures
+    # === EXPERIMENT GRID ===
+    datasets = [DatasetType.SMD]
     models = [ModelType.LSTM_AE, ModelType.TCN_AE, ModelType.TRANSFORMER_AE]
-    # Testing baseline MSE vs your custom losses
-    losses = [LossType.MSE, LossType.RF_WEIGHTED, LossType.FEATURE_SCALED] # Start with MSE to verify architectures first
+    losses = [LossType.MSE, LossType.FEATURE_SCALED, LossType.RF_WEIGHTED]
     
     results = []
     total_exps = len(datasets) * len(models) * len(losses)
     
     print(f"--- STARTING FULL EVALUATION ---")
     print(f"Total Experiments: {total_exps}")
+    print(f"Dataset: SMD (machine-1-1) | Window: 80 | Epochs: 30 | Batch: 32")
+    print(f"Seed: {SEED}")
     
     count = 1
     for dataset in datasets:
@@ -200,10 +167,8 @@ def main():
             for loss in losses:
                 print(f"\n[{count}/{total_exps}] Running {dataset.value} - {model.value} - {loss.value}")
                 
-                # Run Experiment
                 res = run_single_experiment(dataset, model, loss)
                 
-                # Format Result for CSV
                 row = {
                     "Dataset": res['dataset'],
                     "Model": res['model'],
@@ -223,8 +188,6 @@ def main():
                 
     # Final Save
     final_df = pd.DataFrame(results)
-    
-    # Reorder columns for readability
     cols = ["Dataset", "Model", "Loss", "F1", "Precision", "Recall", "AUC", "Status"]
     final_df = final_df[cols]
     

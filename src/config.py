@@ -37,21 +37,13 @@ class DataConfig(BaseModel):
 # 2. MODEL CONFIG
 # ==========================================
 class LSTMOptions(BaseModel):
-    lstm_units: List[int] = [64, 32] 
+    lstm_units: List[int] = [128] 
     activation: str = "tanh"
 
 class TCNOptions(BaseModel):
-    nb_filters: List[int] = [32, 64]
     kernel_size: int = 3
-    dilations: List[int] = [1, 2, 4, 8]
     activation: str = "relu"
     output_activation: str = "linear"
-    
-    @model_validator(mode='after')
-    def validate_lengths(self):
-        if len(self.nb_filters) != len(self.dilations):
-            raise ValueError("TCN: nb_filters list must have same length as dilations list")
-        return self
 
 class TransformerOptions(BaseModel):
     num_heads: int = 4
@@ -66,12 +58,12 @@ class TransformerOptions(BaseModel):
 class ModelConfig(BaseModel):
     model_type: ModelType = ModelType.LSTM_AE 
     
-    batch_size: int = 64
+    batch_size: int = 32
     
-    latent_dim: int = 8
-    dropout: float = 0.2
+    latent_dim: int = 16
+    dropout: float = 0.1
     learning_rate: float = 0.001
-    epochs: int = 50
+    epochs: int = 30
     checkpoint_dir: str = "./checkpoints"
     
     lstm: Optional[LSTMOptions] = None

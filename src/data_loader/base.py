@@ -48,13 +48,10 @@ class BaseDataLoader(ABC):
         
         y = None
         if labels is not None:
-            # OPTION 1: "Any" (Current) - Smears anomalies
-            # label_windows = np.lib.stride_tricks.sliding_window_view(labels, window_shape=ws, axis=0)
-            # y = np.any(label_windows == 1, axis=1).astype(int)
-            
-            # OPTION 2: "Last Point" (Recommended) - Exact timestamp matching
-            # We simply take the labels starting from 'window_size - 1'
-            y = labels[ws-1:].astype(np.float32)
+            # "Any-point-in-window" labeling (matches old KSE scripts):
+            # If any timestep in the window is anomalous, the whole window is labeled 1
+            label_windows = np.lib.stride_tricks.sliding_window_view(labels, window_shape=ws, axis=0)
+            y = np.any(label_windows == 1, axis=1).astype(np.float32)
             
         return X, y
 

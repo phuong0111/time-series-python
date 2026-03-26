@@ -27,8 +27,12 @@ class SMDLoader(BaseDataLoader):
             self.df_label_raw = None
 
     def preprocess(self):
-        # 1. Handle Missing Values: Causal interpolation (forward fill is safe)
-        # Avoid limit_direction='both' on the whole series as it can leak future data into past
+        # 1. Handle Missing & Infinite Values
+        # Replace Inf with NaN first, then interpolate
+        self.df_train_raw.replace([np.inf, -np.inf], np.nan, inplace=True)
+        self.df_test_raw.replace([np.inf, -np.inf], np.nan, inplace=True)
+        
+        # Causal interpolation (forward fill is safe)
         self.df_train_raw = self.df_train_raw.ffill().bfill(limit=10).fillna(0)
         self.df_test_raw = self.df_test_raw.ffill().bfill(limit=10).fillna(0)
 
@@ -36,6 +40,12 @@ class SMDLoader(BaseDataLoader):
         # Fit scaler ONLY on train data
         X_train_scaled = self.scaler.fit_transform(self.df_train_raw.values).astype(np.float32)
         X_test_scaled = self.scaler.transform(self.df_test_raw.values).astype(np.float32)
+
+        # Safety: replace any NaN/Inf from scaling (e.g. zero-variance columns) and clip
+        X_train_scaled = np.nan_to_num(X_train_scaled, nan=0.0, posinf=1.0, neginf=0.0)
+        X_test_scaled = np.nan_to_num(X_test_scaled, nan=0.0, posinf=1.0, neginf=0.0)
+        X_train_scaled = np.clip(X_train_scaled, 0.0, 1.0)
+        X_test_scaled = np.clip(X_test_scaled, 0.0, 1.0)
 
         # 3. Windowing
         X_train, _ = self.create_sliding_window(X_train_scaled)
