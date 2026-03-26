@@ -2,6 +2,7 @@ import sys
 import os
 import random
 import pandas as pd
+import json
 import logging
 import numpy as np
 import tensorflow as tf
@@ -62,7 +63,7 @@ def run_single_experiment(dataset_type, model_type, loss_type):
     if model_type == ModelType.LSTM_AE:
         cfg.model.lstm = LSTMOptions(
             lstm_units=[128], 
-            activation="relu"
+            activation="tanh"
         )
     elif model_type == ModelType.TCN_AE:
         cfg.model.tcn = TCNOptions(
@@ -183,18 +184,16 @@ def main():
                 results.append(row)
                 count += 1
                 
-                # Incremental Save
-                pd.DataFrame(results).to_csv("experiment_results_partial.csv", index=False)
+                # Incremental Save - Single JSON file
+                with open("experiment_results.json", "w") as f:
+                    json.dump(results, f, indent=4)
                 
-    # Final Save
-    final_df = pd.DataFrame(results)
-    cols = ["Dataset", "Model", "Loss", "F1", "Precision", "Recall", "AUC", "Status"]
-    final_df = final_df[cols]
-    
-    final_df.to_csv("experiment_results_final.csv", index=False)
-    
     print("\n--- ALL EXPERIMENTS COMPLETED ---")
-    print(final_df.to_markdown(index=False, tablefmt="grid"))
+    
+    # Display table for final review
+    if results:
+        final_df = pd.DataFrame(results)
+        print(final_df.to_markdown(index=False, tablefmt="grid"))
 
 if __name__ == "__main__":
     main()
