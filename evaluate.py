@@ -32,9 +32,10 @@ def evaluate_model(checkpoint_path: str, dataset_name: str, dataset_type_str: st
         return
 
     # 1. Setup Config
-    cfg = AppConfig()
-    cfg.data.dataset_type = DatasetType(dataset_type_str)
-    cfg.model.model_type = ModelType(model_type_str)
+    cfg = AppConfig(
+        data={"dataset_type": dataset_type_str},
+        model={"model_type": model_type_str, "dataset_name": dataset_name}
+    )
     
     # Configure dataset specific settings
     if cfg.data.dataset_type == DatasetType.SMD:
