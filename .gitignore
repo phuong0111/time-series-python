@@ -21,6 +21,8 @@ data/
 cache/
 logs/
 checkpoints/
+results/
+experiment_results.json
 
 # macOS
 .DS_Store
