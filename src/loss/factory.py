@@ -4,7 +4,8 @@ from src.loss.strategy import (
     TrainingStrategy, 
     MSEStrategy, 
     RFWeightedStrategy, 
-    FeatureScaledStrategy
+    FeatureScaledStrategy,
+    AdaptiveFeatureScaledStrategy
 )
 
 class LossStrategyFactory:
@@ -18,6 +19,9 @@ class LossStrategyFactory:
             
         elif config.loss_type == LossType.FEATURE_SCALED:
             return FeatureScaledStrategy(config)
+
+        elif config.loss_type == LossType.ADAPTIVE_FEATURE_SCALED:
+            return AdaptiveFeatureScaledStrategy(config)
             
         else:
             raise NotImplementedError(f"Loss Strategy {config.loss_type} not implemented")

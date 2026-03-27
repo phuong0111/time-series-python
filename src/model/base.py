@@ -49,6 +49,9 @@ class BaseAnomalyDetector(ABC):
         Train the model. No EarlyStopping — fixed epochs to match old KSE scripts.
         """
         save_dir = self.config.checkpoint_dir
+        if self.config.dataset_name:
+            save_dir = os.path.join(save_dir, self.config.dataset_name)
+            
         os.makedirs(save_dir, exist_ok=True)
         
         if loss_name:

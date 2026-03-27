@@ -65,6 +65,7 @@ class ModelConfig(BaseModel):
     learning_rate: float = 0.001
     epochs: int = 30
     checkpoint_dir: str = "./checkpoints"
+    dataset_name: Optional[str] = None
     
     lstm: Optional[LSTMOptions] = None
     tcn: Optional[TCNOptions] = None
@@ -90,12 +91,18 @@ class FeatureScaledOptions(BaseModel):
 class RFWeightedOptions(BaseModel):
     n_estimators: int = 100   
     random_state: int = 42
+
+class AdaptiveFeatureScaledOptions(BaseModel):
+    pretrain_epochs: int = 10       # Initial pre-training epochs (standard MSE)
+    update_interval: int = 5        # Re-calculate weights every N epochs
+    epsilon: float = 1e-6           # Epsilon for inverse MSE calculation
     
 class LossConfig(BaseModel):
     loss_type: LossType = LossType.MSE
     
     feature_scaled: Optional[FeatureScaledOptions] = None
     rf_weighted: Optional[RFWeightedOptions] = None
+    adaptive_feature_scaled: Optional[AdaptiveFeatureScaledOptions] = None
 
     @model_validator(mode='after')
     def validate_loss_options(self):
@@ -103,6 +110,8 @@ class LossConfig(BaseModel):
             self.feature_scaled = FeatureScaledOptions()
         elif self.loss_type == LossType.RF_WEIGHTED and self.rf_weighted is None:
             self.rf_weighted = RFWeightedOptions()
+        elif self.loss_type == LossType.ADAPTIVE_FEATURE_SCALED and self.adaptive_feature_scaled is None:
+            self.adaptive_feature_scaled = AdaptiveFeatureScaledOptions()
         return self
     
 # ==========================================

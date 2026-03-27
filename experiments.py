@@ -19,7 +19,7 @@ from src.config import (
     AppConfig, DataConfig, ModelConfig, LossConfig, 
     DatasetType, ModelType, LossType, 
     SMDOptions, CICOptions, LSTMOptions, TCNOptions, TransformerOptions,
-    FeatureScaledOptions, RFWeightedOptions
+    FeatureScaledOptions, RFWeightedOptions, AdaptiveFeatureScaledOptions
 )
 from src.utils.logger import setup_logger
 from src.data_loader.factory import DataLoaderFactory
@@ -55,6 +55,7 @@ def run_single_experiment(dataset_type, model_type, loss_type):
     if dataset_type == DatasetType.SMD:
         cfg.data.data_path = "data/SMD"
         cfg.data.smd = SMDOptions(entity_id="machine-1-1")
+        cfg.model.dataset_name = cfg.data.smd.entity_id
     elif dataset_type == DatasetType.CIC:
         cfg.data.data_path = "data/CIC-DDoS2019/cicddos2019_dataset.csv"
         cfg.data.cic = CICOptions(
@@ -68,6 +69,7 @@ def run_single_experiment(dataset_type, model_type, loss_type):
                 "Fwd IAT Total", "Fwd IAT Max", "FIN Flag Count", "SYN Flag Count", "RST Flag Count"
             ]
         )
+        cfg.model.dataset_name = "CIC-DDoS2019"
 
     # --- CONFIGURE MODEL ---
     # All defaults come from config.py (batch=32, epochs=30, lr=0.001, dropout=0.1)
@@ -105,6 +107,12 @@ def run_single_experiment(dataset_type, model_type, loss_type):
         cfg.loss.rf_weighted = RFWeightedOptions(
             n_estimators=100,
             random_state=42
+        )
+    elif loss_type == LossType.ADAPTIVE_FEATURE_SCALED:
+        cfg.loss.adaptive_feature_scaled = AdaptiveFeatureScaledOptions(
+            pretrain_epochs=10,
+            update_interval=5,
+            epsilon=1e-6
         )
 
     # 2. Execution Pipeline
@@ -165,7 +173,7 @@ def main():
     # === EXPERIMENT GRID ===
     datasets = [DatasetType.SMD]
     models = [ModelType.LSTM_AE, ModelType.TCN_AE, ModelType.TRANSFORMER_AE]
-    losses = [LossType.MSE, LossType.FEATURE_SCALED, LossType.RF_WEIGHTED]
+    losses = [LossType.MSE, LossType.FEATURE_SCALED, LossType.RF_WEIGHTED, LossType.ADAPTIVE_FEATURE_SCALED]
     
     results = []
     total_exps = len(datasets) * len(models) * len(losses)
