@@ -171,7 +171,7 @@ def run_single_experiment(dataset_type, model_type, loss_type):
 
 def main():
     # === EXPERIMENT GRID ===
-    datasets = [DatasetType.SMD]
+    datasets = [DatasetType.SMD, DatasetType.CIC]
     models = [ModelType.LSTM_AE, ModelType.TCN_AE, ModelType.TRANSFORMER_AE]
     losses = [LossType.MSE, LossType.FEATURE_SCALED, LossType.RF_WEIGHTED, LossType.ADAPTIVE_FEATURE_SCALED]
     
