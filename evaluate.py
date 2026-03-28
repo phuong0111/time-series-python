@@ -21,7 +21,7 @@ def setup_eval_logger():
     setup_logger(cfg)
     return logging.getLogger("Evaluator")
 
-def evaluate_model(checkpoint_path: str, dataset_name: str, dataset_type_str: str, model_type_str: str):
+def evaluate_model(checkpoint_path: str, dataset_name: str, dataset_type_str: str, model_type_str: str) -> dict:
     logger = setup_eval_logger()
     logger.info(f"--- Starting Evaluation ---")
     logger.info(f"Checkpoint: {checkpoint_path}")
@@ -29,11 +29,11 @@ def evaluate_model(checkpoint_path: str, dataset_name: str, dataset_type_str: st
     
     if not os.path.exists(checkpoint_path):
         logger.error(f"Checkpoint not found at: {checkpoint_path}")
-        return
+        return None
 
     # 1. Setup Config
     cfg = AppConfig(
-        data={"dataset_type": dataset_type_str},
+        data={"dataset_type": dataset_type_str, "window_size": 80},
         model={"model_type": model_type_str, "dataset_name": dataset_name}
     )
     
@@ -54,7 +54,7 @@ def evaluate_model(checkpoint_path: str, dataset_name: str, dataset_type_str: st
         logger.info(f"Test Data Loaded. Shape x: {X_test.shape}, y: {y_test.shape}")
     except Exception as e:
         logger.error(f"Failed to load data: {e}", exc_info=True)
-        return
+        return None
 
     # 3. Load Model
     logger.info("Loading Model Checkpoint...")
@@ -66,12 +66,9 @@ def evaluate_model(checkpoint_path: str, dataset_name: str, dataset_type_str: st
         logger.info("Model loaded successfully.")
     except Exception as e:
         logger.error(f"Failed to load model from {checkpoint_path}: {e}", exc_info=True)
-        return
+        return None
 
     # 4. Evaluate
-    # Note: We evaluate without feature_weights here as they are baked into training.
-    # If the strategy was Adaptive, the model learned those weights in its kernels. 
-    # (Inverse-MSE weights are only used during loss calculation in training).
     logger.info("Evaluating Model on Test Data...")
     try:
         metrics = model_wrapper.evaluate(X_test, y_test)
@@ -86,29 +83,82 @@ def evaluate_model(checkpoint_path: str, dataset_name: str, dataset_type_str: st
         print(f"Best Thresh:   {metrics['best_threshold']:.6f}")
         print("="*40 + "\n")
         
-        # Save results to a simple json inside results/ folder
+        output = {k: float(v) for k, v in metrics.items() if k != 'scores'} # exclude raw scores array from json
+        
+        # Save individual results to a simple json inside results/ folder
         os.makedirs("results", exist_ok=True)
         res_file = os.path.join("results", f"eval_results_{model_type_str}_{dataset_name}.json")
         with open(res_file, "w") as f:
-            output = {k: v for k, v in metrics.items() if k != 'scores'} # exclude raw scores array from json
             json.dump(output, f, indent=4)
         logger.info(f"Results saved to {res_file}")
+        
+        return output
 
     except Exception as e:
         logger.error(f"Evaluation failed: {e}", exc_info=True)
+        return None
+
+def evaluate_all():
+    logger = setup_eval_logger()
+    logger.info("--- STARTING BATCH EVALUATION ---")
+    
+    datasets = [DatasetType.SMD, DatasetType.CIC]
+    models = [ModelType.LSTM_AE, ModelType.TCN_AE, ModelType.TRANSFORMER_AE]
+    losses = [LossType.MSE, LossType.FEATURE_SCALED, LossType.RF_WEIGHTED, LossType.ADAPTIVE_FEATURE_SCALED]
+    
+    all_results = []
+    
+    for dataset in datasets:
+        dataset_name = "machine-1-1" if dataset == DatasetType.SMD else "CIC-DDoS2019"
+        for model in models:
+            for loss in losses:
+                checkpoint_path = f"checkpoints/{dataset_name}/{model.value}_{loss.value}_best.keras"
+                
+                if os.path.exists(checkpoint_path):
+                    print(f"\nEvaluating: {dataset.value} | {model.value} | {loss.value}")
+                    metrics = evaluate_model(checkpoint_path, dataset_name, dataset.value, model.value)
+                    
+                    if metrics:
+                        all_results.append({
+                            "Dataset": dataset.value,
+                            "Dataset_Name": dataset_name,
+                            "Model": model.value,
+                            "Loss": loss.value,
+                            "F1": metrics.get("best_f1", 0.0),
+                            "Precision": metrics.get("precision", 0.0),
+                            "Recall": metrics.get("recall", 0.0),
+                            "AUC": metrics.get("roc_auc", 0.0),
+                            "Best_Threshold": metrics.get("best_threshold", 0.0)
+                        })
+                else:
+                    logger.warning(f"Skipping {dataset.value} {model.value} {loss.value} - Checkpoint not found: {checkpoint_path}")
+
+    # Save comprehensive results
+    os.makedirs("results", exist_ok=True)
+    final_res_file = os.path.join("results", "all_evaluations_summary.json")
+    with open(final_res_file, "w") as f:
+        json.dump(all_results, f, indent=4)
+    print(f"\nBatch evaluation complete. Summary saved to {final_res_file}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate a trained anomaly detection model.")
-    parser.add_argument("--checkpoint", type=str, required=True, help="Path to the saved .keras model checkpoint")
-    parser.add_argument("--dataset-name", type=str, required=True, help="Name of the dataset entity (e.g., machine-1-1)")
-    parser.add_argument("--dataset-type", type=str, default="SMD", choices=["SMD", "CIC"], help="Type of dataset (SMD or CIC)")
-    parser.add_argument("--model-type", type=str, default="LSTM_AE", choices=["LSTM_AE", "TCN_AE", "TRANSFORMER_AE"], help="Model architecture type")
+    parser.add_argument("--all", action="store_true", help="Evaluate all checkpoints found in the checkpoints directory")
+    parser.add_argument("--checkpoint", type=str, help="Path to the saved .keras model checkpoint")
+    parser.add_argument("--dataset-name", type=str, help="Name of the dataset entity (e.g., machine-1-1)")
+    parser.add_argument("--dataset-type", type=str, choices=["SMD", "CIC"], help="Type of dataset (SMD or CIC)")
+    parser.add_argument("--model-type", type=str, choices=["LSTM_AE", "TCN_AE", "TRANSFORMER_AE"], help="Model architecture type")
     
     args = parser.parse_args()
     
-    evaluate_model(
-        checkpoint_path=args.checkpoint,
-        dataset_name=args.dataset_name,
-        dataset_type_str=args.dataset_type,
-        model_type_str=args.model_type
-    )
+    if args.all:
+        evaluate_all()
+    elif args.checkpoint and args.dataset_name and args.dataset_type and args.model_type:
+        evaluate_model(
+            checkpoint_path=args.checkpoint,
+            dataset_name=args.dataset_name,
+            dataset_type_str=args.dataset_type,
+            model_type_str=args.model_type
+        )
+    else:
+        parser.print_help()
+        print("\nError: You must provide either --all OR specify --checkpoint, --dataset-name, --dataset-type, and --model-type.")
