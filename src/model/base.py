@@ -164,4 +164,4 @@ class BaseAnomalyDetector(ABC):
         self.model.save(path)
     
     def load(self, path):
-        self.model = load_model(path)
+        self.model = load_model(path, compile=False)
